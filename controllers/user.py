@@ -1,6 +1,5 @@
 from flask import Blueprint, render_template, request, redirect
 from connectors.mysql_connectors import engine
-
 from models.user import User
 from sqlalchemy import select, or_
 from sqlalchemy.orm import sessionmaker
@@ -49,7 +48,7 @@ def do_user_login():
     try:
         user = session.query(User).filter(User.email==request.form['email']).first()
 
-        if user == None:
+        if user is None:
             return {"message" : "Email tidak terdaftar"}
         
         # Check Password
