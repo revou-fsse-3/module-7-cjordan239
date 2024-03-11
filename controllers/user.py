@@ -1,100 +1,68 @@
-from flask import Blueprint, jsonify, request
-from connectors.mysql_connectors import Session
+from flask import Blueprint, render_template, request, redirect
+from connectors.mysql_connectors import engine
+
 from models.user import User
-from sqlalchemy import select
+from sqlalchemy import select, or_
+from sqlalchemy.orm import sessionmaker
+from flask_login import login_user, logout_user
 
+user_routes = Blueprint('user_routes',__name__)
 
+@user_routes.route("/register", methods=['GET'])
+def user_register():
+    return render_template("users/register.html")
 
-user_routes = Blueprint('user_routes', __name__)
+@user_routes.route("/register", methods=['POST'])
+def do_registration():
 
-@user_routes.route('/user', methods=['GET'])
-def get_user():
-    response_data = dict()
+    name = request.form['username']
+    email = request.form['email']
+    password = request.form['password']
+    
+    NewUser = User(username=name, email=email)
+    NewUser.set_password(password)
+
+    connection = engine.connect()
+    Session = sessionmaker(connection)
+    session = Session()
+
+    session.begin()
+    try:
+        session.add(NewUser)
+        session.commit()
+    except Exception as e:
+        session.rollback()
+        return { "message": "Gagal Register" }
+    
+    return { "message": "Sukses Register" }
+
+@user_routes.route("/login", methods=['GET'])
+def user_login():
+    return render_template("users/login.html")
+
+@user_routes.route("/login", methods=['POST'])
+def do_user_login():
+    connection = engine.connect()
+    Session = sessionmaker(connection)
     session = Session()
 
     try:
-        user_query = select(User)
-        user = session.execute(user_query).scalars()
-        user_data = [dict(users) for users in user]
-        response_data['users'] = user_data
+        user = session.query(User).filter(User.email==request.form['email']).first()
 
-    
-    except Exception as a:
-        print(a)
-        return "error"
-    
-    return jsonify(response_data)
-
-from flask import request, jsonify
-import bcrypt
-
-@user_routes.route('/register', methods=['POST'])
-def register_user():
-    data = request.json
-    username = data.get('username')
-    email = data.get('email')
-    password = data.get('password')
-
-    try:
-        # Hash the password using bcrypt
-        hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-        # Create a new User object with the hashed password
-        new_user = User(username=username, email=email, password=hashed_password)
-
-        # Add the new user to the session and commit the transaction
-        session = Session()
-        session.add(new_user)
-        session.commit()
-
-        return jsonify({'message': 'User registered successfully'})
-    except Exception as e:
-        # Handle any errors that occur during the registration process
-        print(e)
-        return jsonify({'error': 'An error occurred during registration'})
-
-    
-@user_routes.route('/login', methods=['POST'])
-def login_user():
-    data = request.json
-    username = data.get('username')
-    password = data.get('password')
-
-    try:
-        session = Session()
-        user = session.query(User).filter_by(username=username, password=password).first()
-
-        if user:
-            return jsonify({'message': 'Login successful'})
-        else:
-            return jsonify({'error': 'Invalid username or password'})
+        if user == None:
+            return {"message" : "Email tidak terdaftar"}
         
-    except Exception as a:
-        print(a)
-        return jsonify({'error': 'An error occurred'})
+        # Check Password
+        if not user.check_password(request.form['password']):
+            return {"message" : "Password Salah"}
+
+        login_user(user, remember=False)
+        return redirect('/product')
+
+    except Exception as e:
+        return { "message" : "Login Failed"}
     
-@user_routes.route('/user', methods=['DELETE'])
-def delete_user():
-    data = request.json
-    user_id = data.get('id')
-
-    if not user_id:
-        return "No user ID found"
-
-    try:
-        session = Session()
-        user = session.query(User).filter_by(id=user_id).first()
-
-        if not user:
-            return jsonify({'error': 'User not found'})
-
-        session.delete(user)
-        session.commit()
-
-        return jsonify({'message': 'Deletion successful'})
-
-    except Exception as a:
-        print(a)
-        return jsonify({'error': 'An error occurred'})
-
-    
+@user_routes.route("/logout", methods=['GET'])
+def do_user_logout():
+    logout_user()
+    return redirect('/login')
